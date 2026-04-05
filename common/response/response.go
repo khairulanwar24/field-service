@@ -1,71 +1,69 @@
 package response
 
 import (
-	"net/http"                                 // digunakan untuk mengambil text dari HTTP status code (misalnya 200 -> "OK")
-	"user-service/constants"                   // berisi constant seperti Success dan Error
-	errConstant "user-service/constants/error" // alias import untuk constant error
-
-	"github.com/gin-gonic/gin" // framework web Gin
+	"field-service/constants"
+	errConstant "field-service/constants/error"
+	"github.com/gin-gonic/gin"
+	"net/http"
 )
 
-// Struct Response digunakan sebagai format response JSON yang akan dikirim ke client
+// Response adalah struktur data (cetakan) untuk menentukan bentuk dari JSON yang akan dikirim ke client (Postman/Frontend).
 type Response struct {
-	Status  string      `json:"status"`          // status response (biasanya "success" atau "error")
-	Message any         `json:"message"`         // pesan response (bisa string, object, dll)
-	Data    interface{} `json:"data"`            // data yang dikirim ke client
-	Token   *string     `json:"token,omitempty"` // token optional, jika nil tidak akan muncul di JSON
+	// Status menunjukkan apakah request berhasil atau gagal (misal: "success" atau "error")
+	Status  string      `json:"status"`
+	// Message menampung pesan tambahan (bisa berupa teks String atau tipe data apa saja)
+	Message any         `json:"message"`
+	// Data berisi isi dari response utamanya (seperti daftar user). interface{} berarti bisa menampung tipe apa saja.
+	Data    interface{} `json:"data"`
+	// Token digunakan spesifik untuk mengembalikan sebuah JWT token (misal sehabis login). Sifatnya opsional (omitempty).
+	Token   *string     `json:"token,omitempty"`
 }
 
-// Struct ini digunakan untuk mengirim parameter ke function HttpResponse
+// ParamHTTPResp adalah tipe khusus (struktur parameter) yang dipakai saat memanggil fungsi HttpResponse.
 type ParamHTTPResp struct {
-	Code    int          // HTTP status code (200, 400, 500 dll)
-	Err     error        // error dari proses sebelumnya
-	Message *string      // custom message jika ingin mengganti pesan default
-	Gin     *gin.Context // context dari Gin untuk mengirim response
-	Data    interface{}  // data yang akan dikirim ke client
-	Token   *string      // token jika ada (biasanya untuk login)
+	Code    int          // Kode HTTP Status (contoh: 200, 400, 500)
+	Err     error        // Data error dari proses Go
+	Message *string      // Pesan khusus (opsional)
+	Gin     *gin.Context // Gin context untuk merespons ke client
+	Data    interface{}  // Data utama yang akan dikembalikan
+	Token   *string      // Token untuk autentikasi (opsional)
 }
 
-// Function utama untuk mengirim HTTP response
+// HttpResponse adalah fungsi pusat (sentral) untuk membalas/merespons permintaan (request) klien dalam format JSON.
 func HttpResponse(param ParamHTTPResp) {
-
-	// Jika tidak ada error
+	// 1. Jika tidak ada error sama sekali, berarti sukses.
 	if param.Err == nil {
-
-		// kirim response success dalam bentuk JSON
+		// Menggunakan param.Gin.JSON untuk mengirim data berformat JSON kembali ke aplikasi peminta.
 		param.Gin.JSON(param.Code, Response{
-			Status:  constants.Success,              // status success
-			Message: http.StatusText(http.StatusOK), // mengambil text dari HTTP status (200 -> OK)
-			Data:    param.Data,                     // data yang dikirim
-			Token:   param.Token,                    // token jika ada
+			Status:  constants.Success,              // Tulis status sebagai sukses
+			Message: http.StatusText(http.StatusOK), // Teks standar dari angka 200 (yaitu "OK")
+			Data:    param.Data,                     // Isi dengan data utamanya
+			Token:   param.Token,                    // Isi dengan token
 		})
+		// Selesaikan/hentikan eksekusi dari fungsi HttpResponse karena sudah sukses merespon
+		return
 	}
 
-	// default message jika terjadi error
+	// 2. Kalau kode sampai sini, berarti ada sebuah ERROR. Kita siapkan pesan error umum "Kesalahan Server" secara bawaan.
 	message := errConstant.ErrInternalServerError.Error()
-
-	// jika ada custom message dari parameter
+	
+	// 3. Jika programmer lewatkan teks pesan error khusus, maka timpa (overwrite) pesan umumnya.
 	if param.Message != nil {
 		message = *param.Message
-
-		// jika ada error dari proses sebelumnya
 	} else if param.Err != nil {
-
-		// cek apakah error termasuk dalam mapping error yang sudah dibuat
+		// 4. Sebaliknya, gunakan fungsi pengecekan (ErrMapping) untuk melihat apakah tipe error yang terjadi 
+		// sudah terdaftar sistem (dikenali). Jika ya, tampilkan tulisan aslinya sesuai error dari Go.
 		if errConstant.ErrMapping(param.Err) {
-
-			// jika iya gunakan message dari error tersebut
 			message = param.Err.Error()
 		}
 	}
 
-	// kirim response error ke client
+	// 5. Berikan respon balik berformat JSON dengan kode HTTP jelek (kesalahan).
 	param.Gin.JSON(param.Code, Response{
-		Status:  constants.Error, // status error
-		Message: message,         // pesan error
-		Data:    param.Data,      // data tambahan jika ada
+		Status:  constants.Error, // Statusnya menjadi error (bukan success)
+		Message: message,         // Pesan menyesuaikan logika di atas
+		Data:    param.Data,      // Umumnya kosong (null) karena error
 	})
-
-	// mengakhiri function
 	return
 }
+
