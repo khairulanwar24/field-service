@@ -1,26 +1,23 @@
 package config
 
 import (
-	"fmt"     // Package bawaan Go untuk memformat string (seperti menggabungkan teks)
-	"net/url" // Package bawaan Go untuk memanipulasi URL (misal menyandikan karakter khusus)
-	"time"    // Package bawaan Go untuk mengelola waktu dan durasi
+	"fmt"
+	"net/url"
+	"time"
 
-	"gorm.io/driver/postgres" // Driver khusus agar GORM bisa berkomunikasi dengan database PostgreSQL
-	"gorm.io/gorm"            // Library GORM (Object Relational Mapping) untuk mempermudah interaksi dengan database
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
-// InitDatabase adalah fungsi untuk menginisialisasi/membuka koneksi ke database PostgreSQL.
-// Fungsi ini mengembalikan object/koneksi *gorm.DB jika sukses, atau error jika gagal.
+// InitDatabase adalah fungsi untuk membuka koneksi ke database PostgreSQL menggunakan informasi dari config.
 func InitDatabase() (*gorm.DB, error) {
-	// Membaca variabel Config global yang sudah diisi sebelumnya (dari file config.go)
+	// 1. Ambil seluruh data konfigurasi yang sudah di-load sebelumnya di variabel Config.
 	config := Config
 
-	// Menyandikan password (URL Encode) agar jika ada karakter khusus di password, tetap aman saat dimasukkan ke dalam link/URI
+	// 2. Enkripsi/amankan karakter unik pada password (seperti @ atau !) agar tidak merusak format URL.
 	encodedPassword := url.QueryEscape(config.Database.Password)
 
-	// Menyusun string/URI koneksi (Connection String) dengan format khusus PostgreSQL.
-	// Menggabungkan username, password, host, port, dan nama database.
-	// sslmode=disable berarti kita tidak menggunakan koneksi aman SSL sementara waktu.
+	// 3. Rangkai URL koneksi PostgreSQL (contoh: postgresql://user:pass@localhost:5432/namadb?sslmode=disable).
 	uri := fmt.Sprintf("postgresql://%s:%s@%s:%d/%s?sslmode=disable",
 		config.Database.Username,
 		encodedPassword,
@@ -29,36 +26,24 @@ func InitDatabase() (*gorm.DB, error) {
 		config.Database.Name,
 	)
 
-	// Membuka koneksi ke database PostgreSQL menggunakan URI yang sudah dibuat di atas, dibungkus dengan pengaturan standar GORM
+	// 4. Minta gorm (Pustaka ORM untuk Go) untuk mencoba membuka jalan/sambungan ke database memakai URL tadi.
 	db, err := gorm.Open(postgres.Open(uri), &gorm.Config{})
-
-	// Jika terjadi error saat mencoba terhubung ke database...
 	if err != nil {
-		// Maka kembalikan nilai nil (kosong) dan catatan pesan error-nya
-		return nil, err
+		return nil, err // Jika gagal menyambung, kembalikan pesan error.
 	}
 
-	// db.DB() digunakan untuk mendapatkan objek koneksi asli bawaan Go (sql.DB) dari GORM.
-	// Tujuannya agar kita bebas mengatur parameter tambahan (seperti batas jumlah dan waktu koneksi)
+	// 5. Ambil objek database asli (sqlDB) dari dalam GORM agar kita bisa menyetel batas konekinya.
 	sqlDB, err := db.DB()
-
-	// Jika gagal mendapatkan objek koneksi aslinya...
 	if err != nil {
 		return nil, err
 	}
 
-	// Mengatur jumlah maksimal koneksi database yang menganggur (idle) yang dibiarkan tetap terbuka
-	sqlDB.SetMaxIdleConns(config.Database.MaxIdleConnections)
+	// 6. Atur batas maksimal dan waktu hidup (umur) setiap sambungan ke database agar ram tidak jebol.
+	sqlDB.SetMaxIdleConns(config.Database.MaxIdleConnections)                                    // Batas sambungan yang nganggur/standby.
+	sqlDB.SetMaxOpenConns(config.Database.MaxOpenConnections)                                    // Maksimal total sambungan yang boleh dibuka bersamaan.
+	sqlDB.SetConnMaxLifetime(time.Duration(config.Database.MaxLifeTimeConnection) * time.Second) // Umur maksimal sambungan sebelum disuruh refresh.
+	sqlDB.SetConnMaxIdleTime(time.Duration(config.Database.MaxIdleTime) * time.Second)           // Batas waktu tunggu sambungan yang nganggur sebelum diputus otomatis.
 
-	// Mengatur jumlah maksimal koneksi aplikasi ke database yang dapat terbuka dalam waktu bersamaan
-	sqlDB.SetMaxOpenConns(config.Database.MaxOpenConnections)
-
-	// Mengatur batas waktu maksimal sebuah koneksi boleh hidup/terhubung sebelum diputus (diubah jadi format Durasi Detik)
-	sqlDB.SetConnMaxLifetime(time.Duration(config.Database.MaxLifeTimeConnection) * time.Second)
-
-	// Mengatur batas waktu maksimal sebuah koneksi boleh dibiarkan menganggur sebelum ditutup
-	sqlDB.SetConnMaxIdleTime(time.Duration(config.Database.MaxIdleTime) * time.Second)
-
-	// Jika semuanya lancar, kembalikan objek koneksi database (db) dan artinya error-nya nil (kosong)
+	// 7. Kembalikan objek database (db) yang sudah siap dipakai ke fungsi yang memanggilnya.
 	return db, nil
 }
