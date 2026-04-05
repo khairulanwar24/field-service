@@ -1,61 +1,75 @@
-package config // Package config digunakan untuk mengatur konfigurasi aplikasi
+package config
 
 import (
-	"os"                       // Package bawaan Go untuk berinteraksi dengan sistem operasi (misalnya membaca environment variable)
-	"user-service/common/util" // Package utility/bantuan bawaan dari project ini sendiri
+	"field-service/common/util"
+	"os"
 
-	"github.com/sirupsen/logrus"      // Library eksternal untuk melakukan logging (mencatat aktivitas/error)
-	_ "github.com/spf13/viper/remote" // Library eksternal untuk membaca konfigurasi dari Consul
+	"github.com/sirupsen/logrus"
+	_ "github.com/spf13/viper/remote"
 )
 
-// Config adalah variabel global yang akan menyimpan seluruh konfigurasi aplikasi.
-// Variabel ini bisa diakses dari file lain dengan memanggil config.Config
+// Config adalah variabel global yang menyimpan seluruh konfigurasi aplikasi saat berjalan.
 var Config AppConfig
 
-// AppConfig adalah struktur data yang mendefinisikan bentuk konfigurasi utama aplikasi.
-// Tag `json:"..."` digunakan agar Go tahu cara membaca data ini dari format JSON.
+// AppConfig adalah cetak biru (struct) dari seluruh data pengaturan (seperti port, nama database, dll).
 type AppConfig struct {
-	Port                  int      `json:"port"`                  // Port aplikasi berjalan (misal: 8080)
-	AppName               string   `json:"appName"`               // Nama aplikasi kita
-	AppEnv                string   `json:"appEnv"`                // Environment aplikasi (misal: development, production)
-	SignatureKey          string   `json:"signatureKey"`          // Kunci rahasia untuk signature fitur tertentu
-	Database              Database `json:"database"`              // Konfigurasi khusus untuk database (berisi struct Database di bawah)
-	RateLimiterMaxRequest float64  `json:"rateLimiterMaxRequest"` // Batas jumlah maksimal request (untuk mencegah spam)
-	RateLimiterTimeSecond int      `json:"rateLimiterTimeSecond"` // Batas waktu dalam detik untuk hitungan pembatasan request
-	JwtSecretKey          string   `json:"jwtSecretKey"`          // Kunci rahasia pembuat dan pemvalidasi token JWT (untuk login)
-	JwtExpirationTime     int      `json:"jwtExpirationTime"`     // Waktu berlaku token JWT sebelum kadaluarsa
+	Port                       int             `json:"port"`
+	AppName                    string          `json:"appName"`
+	AppEnv                     string          `json:"appEnv"`
+	SignatureKey               string          `json:"signatureKey"`
+	Database                   Database        `json:"database"`
+	RateLimiterMaxRequest      float64         `json:"rateLimiterMaxRequest"`
+	RateLimiterTimeSecond      int             `json:"rateLimiterTimeSecond"`
+	InternalService            InternalService `json:"internalService"`
+	GCSType                    string          `json:"gcsType"`
+	GCSProjectID               string          `json:"gcsProjectID"`
+	GCSPrivateKeyID            string          `json:"gcsPrivateKeyID"`
+	GCSPrivateKey              string          `json:"gcsPrivateKey"`
+	GCSClientEmail             string          `json:"gcsClientEmail"`
+	GCSClientID                string          `json:"gcsClientID"`
+	GCSAuthURI                 string          `json:"gcsAuthURI"`
+	GCSTokenURI                string          `json:"gcsTokenURI"`
+	GCSAuthProviderX509CertURL string          `json:"gcsAuthProviderX509CertURL"`
+	GCSClientX509CertURL       string          `json:"gcsClientX509CertURL"`
+	GCSUniverseDomain          string          `json:"gcsUniverseDomain"`
+	GCSBucketName              string          `json:"gcsBucketName"`
 }
 
-// Database adalah struktur data yang mendefinisikan info detail koneksi ke database.
+// Database menyimpan konfigurasi khusus untuk koneksi ke PostgreSQL/DB.
 type Database struct {
-	Host                  string `json:"host"`                  // Alamat host server database (misal: localhost atau IP server)
-	Port                  int    `json:"port"`                  // Port server database
-	Name                  string `json:"name"`                  // Nama database yang akan dituju
-	Username              string `json:"username"`              // Username untuk akses masuk database
-	Password              string `json:"password"`              // Password untuk akses database
-	MaxOpenConnections    int    `json:"maxOpenConnections"`    // Jumlah maksimal koneksi dari aplikasi ke database yang aktif di saat bersamaan
-	MaxLifeTimeConnection int    `json:"maxLifeTimeConnection"` // Batas umur maksimal sebuah koneksi database (apabila sudah lewat langsung ditutup)
-	MaxIdleConnections    int    `json:"maxIdleConnections"`    // Jumlah maksimal koneksi database yang dibiarkan tetap ada meski sedang tidak dipakai (menganggur)
-	MaxIdleTime           int    `json:"maxIdleTime"`           // Waktu maksimal sebuah koneksi dibiarkan saat sedang menganggur
+	Host                  string `json:"host"`
+	Port                  int    `json:"port"`
+	Name                  string `json:"name"`
+	Username              string `json:"username"`
+	Password              string `json:"password"`
+	MaxOpenConnections    int    `json:"maxOpenConnections"`
+	MaxLifeTimeConnection int    `json:"maxLifeTimeConnection"`
+	MaxIdleConnections    int    `json:"maxIdleConnections"`
+	MaxIdleTime           int    `json:"maxIdleTime"`
 }
 
-// Init adalah fungsi yang dipanggil pertama kali jika ingin memuat/meload konfigurasi ke dalam variabel Config.
+// InternalService menampung data URL atau info mikroservis lain yang dihubungi oleh service ini.
+type InternalService struct {
+	User User `json:"user"`
+}
+
+// User menyimpan konfigurasi khusus untuk komunikasi dengan User Service.
+type User struct {
+	Host         string `json:"host"`
+	SignatureKey string `json:"signatureKey"`
+}
+
+// Init adalah fungsi untuk membaca file pengaturan (seperti config.json) dan memasukkannya ke variabel Config.
 func Init() {
-	// 1. Mencoba membaca file konfigurasi lokal yang bernama "config.json" di direktori utama "."
+	// 1. Coba baca pengaturan dari file lokal "config.json".
 	err := util.BindFromJSON(&Config, "config.json", ".")
-
-	// Jika mengalami error (contohnya: file tidak ditemukan)...
 	if err != nil {
-		// Menulis/mencatat info error ke console agar kita tahu file lokal gagal dibaca
+		// 2. Jika gagal membaca file lokal, catat informasi tersebut.
 		logrus.Infof("failed to bind config: %v", err)
-
-		// 2. Karena cara pertama gagal, dicoba cara alternatif yakni membaca pengaturan dari Consul Server jarak jauh.
-		// Alamat dan path menuju server Consul diambil dari environment/variabel sistem menggunakan os.Getenv
+		// 3. Kemudian, coba baca pengaturan dari layanan eksternal Consul (Distributed Config).
 		err = util.BindFromConsul(&Config, os.Getenv("CONSUL_HTTP_URL"), os.Getenv("CONSUL_HTTP_PATH"))
-
-		// Jika cara kedua ini juga mengalami kegagalan...
 		if err != nil {
-			// Maka sistem akan memicu panic (mengentikan aplikasi sepenuhnya) karena tak ada sumber asal konfigurasi
+			// 4. Jika dari Consul juga gagal, maka matikan aplikasi karena tanpa config aplikasi tidak bisa jalan (panic).
 			panic(err)
 		}
 	}
