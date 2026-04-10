@@ -13,7 +13,9 @@ import (
 	"google.golang.org/api/option"
 )
 
-// ServiceAccountKeyJSON mencerminkan semua isi (struktur) dari file JSON Google Cloud kredensial Anda.
+// ServiceAccountKeyJSON adalah struktur data (struct) yang merepresentasikan isi dari file
+// kredensial (JSON) untuk akun layanan Google Cloud (GCP Service Account).
+// Struct ini digunakan untuk memetakan (parsing) data JSON yang diperlukan untuk otentikasi.
 type ServiceAccountKeyJSON struct {
 	Type                    string `json:"type"`
 	ProjectID               string `json:"project_id"`
@@ -28,18 +30,23 @@ type ServiceAccountKeyJSON struct {
 	UniverseDomain          string `json:"universe_domain"`
 }
 
-// GCSClient adalah struktur obyek penampung informasi kredensial JSON dan nama *bucket* (penyimpanan) GCS.
+// GCSClient adalah struct utama yang menyimpan konfigurasi untuk terhubung dengan
+// Google Cloud Storage (GCS). Ini menampung kredensial akun layanan (ServiceAccountKeyJSON)
+// dan nama bucket tempat file akan disimpan.
 type GCSClient struct {
 	ServiceAccountKeyJSON ServiceAccountKeyJSON
 	BucketName            string
 }
 
-// IGCSClient adalah sebuah antarmuka (interface) kontrak yang mengharuskan adanya fungsi UploadFile.
+// IGCSClient adalah sebuah interface. Interface ini bertindak sebagai "kontrak" yang
+// menentukan fungsi apa saja yang harus dimiliki oleh sebuah GCS Client.
+// Antarmuka ini hanya memiliki satu metode yaitu UploadFile.
 type IGCSClient interface {
 	UploadFile(context.Context, string, []byte) (string, error)
 }
 
-// NewGCSClient adalah fungsi "Constructor" untuk merakit dan mengembalikan objek GCSClient baru.
+// NewGCSClient adalah fungsi "pembuat" (constructor). Fungsi ini digunakan untuk
+// membuat instance baru dari GCSClient. Fungsi mengembalikan interface IGCSClient.
 func NewGCSClient(serviceAccountKeyJSON ServiceAccountKeyJSON, bucketName string) IGCSClient {
 	return &GCSClient{
 		ServiceAccountKeyJSON: serviceAccountKeyJSON,
@@ -47,44 +54,55 @@ func NewGCSClient(serviceAccountKeyJSON ServiceAccountKeyJSON, bucketName string
 	}
 }
 
-// createClient adalah fungsi internal (private) untuk membuat klien koneksi ke peladen Google Cloud Storage.
+// createClient adalah metode (method) dari struct GCSClient untuk menginisialisasi
+// client bawaan dari SDK Google Cloud Storage secara langsung menggunakan kredensial JSON.
+// Metode ini bersifat privat (diawali huruf kecil) karena hanya digunakan di dalam file gcs.go ini.
 func (g *GCSClient) createClient(ctx context.Context) (*storage.Client, error) {
-	// 1. Membuat penampung memori (buffer) untuk data JSON.
+	// 1. Siapkan sebuah penyangga (buffer) untuk menyimpan data JSON
 	reqBodyBytes := new(bytes.Buffer)
-	// 2. Menerjemahkan/menulis nilai variabel dari bahasa Go ke dalam bentuk teks JSON murni lalu memasukkannya ke buffer.
+
+	// 2. Ubah struct ServiceAccountKeyJSON menjadi wujud JSON kembali dan masukkan ke dalam penyangga (buffer)
 	err := json.NewEncoder(reqBodyBytes).Encode(g.ServiceAccountKeyJSON)
 	if err != nil {
 		logrus.Errorf("failed to encode service account key json: %v", err)
 		return nil, err
 	}
 
-	// 3. Ubah buffer JSON menjadi kumpulan "byte" murni agar dipahami komputer.
+	// 3. Ambil data JSON dalam bentuk kumpulan byte (slice of bytes)
 	jsonByte := reqBodyBytes.Bytes()
-	// 4. Minta Google SDK untuk membuatkan koneksi dengan berbekal file JSON dalam bentuk *byte* tadi.
+
+	// 4. Buatlah client penyimpanan (storage client) Google Cloud Storage baru
+	// dengan memasukkan kredensial dari data JSON tersebut
 	client, err := storage.NewClient(ctx, option.WithCredentialsJSON(jsonByte))
 	if err != nil {
 		logrus.Errorf("failed to create client: %v", err)
 		return nil, err
 	}
 
+	// 5. Kembalikan client yang telah berhasil dibuat
 	return client, nil
 }
 
-// UploadFile adalah fungsi publik yang bertugas mengunggah sebuah file data (*byte*) ke Google Cloud Storage (GCS).
+// UploadFile adalah metode untuk mengunggah file yang sudah berupa byte ke bucket GCS.
+// Fungsi ini membutuhkan: ctx (konteks atau latar pelaksanaan), filename (nama file tujuan),
+// dan data (isi dari file dalam bentuk array byte).
 func (g *GCSClient) UploadFile(ctx context.Context, filename string, data []byte) (string, error) {
 	var (
-		contentType      = "application/octet-stream" // Aturan tipe konten umum (file mentah).
-		timeoutInSeconds = 60                         // Menunggu unggahan selesai maksimal 60 detik.
+		// Tipe konten standar (berlaku untuk semua tipe data/file yang tidak didefinisikan spesifik)
+		contentType = "application/octet-stream"
+		// Batas waktu maksimal saat proses upload ke GCS, yang pada kasus ini diset 60 detik (1 menit)
+		timeoutInSeconds = 60
 	)
 
-	// 1. Panggil fungsi yang telah kita buat (createClient) agar bisa terhubung ke GCS.
+	// 1. Buat client GCS menggunakan kredensial yang dimiliki
 	client, err := g.createClient(ctx)
 	if err != nil {
 		logrus.Errorf("failed to create client: %v", err)
 		return "", err
 	}
 
-	// 2. Keyword 'defer' memastikan koneksi 'client' akan selalu ditutup di akhir fungsi ini, entah berhasil maupun error.
+	// 2. Tunda eksekusi (defer) untuk menutup sambungan client secara otomatis
+	// saat fungsi UploadFile ini selesai dijalankan agar tidak ada kebocoran memory
 	defer func(client *storage.Client) {
 		err := client.Close()
 		if err != nil {
@@ -93,43 +111,42 @@ func (g *GCSClient) UploadFile(ctx context.Context, filename string, data []byte
 		}
 	}(client)
 
-	// 3. Batasi waktu proses (timeout) agar tidak macet / hang abadi.
+	// 3. Batasi waktu penyelesaian (timeout) untuk proses upload dengan batas 60 detik.
+	// Jika melewati itu, ctx akan dibatalkan otomatis melalui fungsi cancel()
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutInSeconds)*time.Second)
-	// Keyword 'defer' lagi untuk memastikan proses waktu mundur (timeout) tidak lupa dimatikan secara perlahan di akhir.
-	defer cancel()
+	defer cancel() // Pastikan cancel dijalankan saat proses selesai
 
-	// 4. Siapkan lokasi ember (Bucket) dan juga nama file incaran (Object) di Google Cloud.
+	// 4. Hubungkan dengan bucket dan persiapkan objek dengan nama sesuai parameter 'filename'
 	bucket := client.Bucket(g.BucketName)
 	object := bucket.Object(filename)
+
+	// 5. Siapkan data file yang masuk sebagai buffer (ruang memori sementara) lalu buat penulis (writer)
 	buffer := bytes.NewBuffer(data)
-
-	// 5. Buka jalur untuk mulai menulis (mengirim) data ke penampung online GCS tadi.
 	writer := object.NewWriter(ctx)
-	writer.ChunkSize = 0 // Chunk 0 berarti tanpa pembagian ukuran, Google yang menentukan porsi memori.
+	writer.ChunkSize = 0 // Jangan membagi data ke pecahan spesifik (chunk) dan langung upload saja
 
-	// 6. Menyalin aliran data file (buffer) mentah untuk dikirim melalui penulis (writer) secara otomatis ke awan/cloud.
+	// 6. Eksekusi salin/unggah (copy) dari buffer (data milik kita) menuju ke writer (objek di GCS)
 	_, err = io.Copy(writer, buffer)
 	if err != nil {
 		logrus.Errorf("failed to copy: %v", err)
 		return "", err
 	}
 
-	// 7. Jika proses copy selesai tertulis seluruhnya, mari segera tutup sambungannya.
+	// 7. Tutup 'writer' untuk menandakan bahwa pengunggahan file telah selesai sepenuhnya
 	err = writer.Close()
 	if err != nil {
 		logrus.Errorf("failed to close: %v", err)
 		return "", err
 	}
 
-	// 8. Terapkan informasi tamabahan (Metadata/Type) ke dalam file Google Cloud Storage agar tidak ditolak pembaca web.
+	// 8. Tentukan keterangan tambahan dari objek (Metadata) berupa tipe kontennya (ContentType)
 	_, err = object.Update(ctx, storage.ObjectAttrsToUpdate{ContentType: contentType})
 	if err != nil {
 		logrus.Errorf("failed to update: %v", err)
 		return "", err
 	}
 
-	// 9. Rangkai URL utuh menuju file hasil unggahan (format alamat Google API penyimpanan awan).
+	// 9. Susun dan kembalikan penautan (URL) yang mengarah kepada file yang baru saja diunggah ke Google Cloud Storage
 	url := fmt.Sprintf("https://storage.googleapis.com/%s/%s", g.BucketName, filename)
-	// 10. Kembalikan link URL lengkap tersebut!
 	return url, nil
 }
