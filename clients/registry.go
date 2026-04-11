@@ -3,7 +3,7 @@ package clients
 
 import (
 	"field-service/clients/config"
-	clients "field-service/clients/user" // Alias 'clients' untuk mempermudah pemanggilan User Client
+	clients "field-service/clients/user"
 	config2 "field-service/config"
 )
 
