@@ -3,20 +3,21 @@ package response
 import (
 	"field-service/constants"
 	errConstant "field-service/constants/error"
-	"github.com/gin-gonic/gin"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
 )
 
 // Response adalah struktur data (cetakan) untuk menentukan bentuk dari JSON yang akan dikirim ke client (Postman/Frontend).
 type Response struct {
 	// Status menunjukkan apakah request berhasil atau gagal (misal: "success" atau "error")
-	Status  string      `json:"status"`
+	Status string `json:"status"`
 	// Message menampung pesan tambahan (bisa berupa teks String atau tipe data apa saja)
-	Message any         `json:"message"`
+	Message any `json:"message"`
 	// Data berisi isi dari response utamanya (seperti daftar user). interface{} berarti bisa menampung tipe apa saja.
-	Data    interface{} `json:"data"`
+	Data interface{} `json:"data"`
 	// Token digunakan spesifik untuk mengembalikan sebuah JWT token (misal sehabis login). Sifatnya opsional (omitempty).
-	Token   *string     `json:"token,omitempty"`
+	Token *string `json:"token,omitempty"`
 }
 
 // ParamHTTPResp adalah tipe khusus (struktur parameter) yang dipakai saat memanggil fungsi HttpResponse.
@@ -46,12 +47,12 @@ func HttpResponse(param ParamHTTPResp) {
 
 	// 2. Kalau kode sampai sini, berarti ada sebuah ERROR. Kita siapkan pesan error umum "Kesalahan Server" secara bawaan.
 	message := errConstant.ErrInternalServerError.Error()
-	
+
 	// 3. Jika programmer lewatkan teks pesan error khusus, maka timpa (overwrite) pesan umumnya.
 	if param.Message != nil {
 		message = *param.Message
 	} else if param.Err != nil {
-		// 4. Sebaliknya, gunakan fungsi pengecekan (ErrMapping) untuk melihat apakah tipe error yang terjadi 
+		// 4. Sebaliknya, gunakan fungsi pengecekan (ErrMapping) untuk melihat apakah tipe error yang terjadi
 		// sudah terdaftar sistem (dikenali). Jika ya, tampilkan tulisan aslinya sesuai error dari Go.
 		if errConstant.ErrMapping(param.Err) {
 			message = param.Err.Error()
@@ -66,4 +67,3 @@ func HttpResponse(param ParamHTTPResp) {
 	})
 	return
 }
-
