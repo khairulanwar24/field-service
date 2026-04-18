@@ -11,11 +11,11 @@ import (
 
 // TimeRoute adalah struktur data (struct) untuk menyimpan kebutuhan endpoint terkait waktu (Time).
 // controller: untuk memanggil logika dari controller waktu.
-// route: objek dari framework Gin untuk mengelompokkan URL/rute.
+// group: objek dari framework Gin untuk mengelompokkan URL/rute.
 // client: untuk berkomunikasi dengan aplikasi/service eksternal (misal: memvalidasi layanan lain).
 type TimeRoute struct {
 	controller controllers.IControllerRegistry
-	route      *gin.RouterGroup
+	group      *gin.RouterGroup
 	client     clients.IClientRegistry
 }
 
@@ -27,10 +27,10 @@ type ITimeRoute interface {
 
 // NewTimeRoute adalah fungsi pembuat (constructor) untuk instansiasi TimeRoute.
 // Fungsi ini menyiapkan grup rute (awalan URL) "/time" pada framework Gin.
-func NewTimeRoute(router *gin.Engine, controller controllers.IControllerRegistry, client clients.IClientRegistry) ITimeRoute {
+func NewTimeRoute(controller controllers.IControllerRegistry, group *gin.RouterGroup, client clients.IClientRegistry) ITimeRoute {
 	return &TimeRoute{
 		controller: controller,
-		route:      router.Group("/time"), // Mendaftarkan awalan rute menjadi "/time"
+		group:      group, // Mendaftarkan awalan rute menjadi "/time"
 		client:     client,
 	}
 }
@@ -39,7 +39,7 @@ func NewTimeRoute(router *gin.Engine, controller controllers.IControllerRegistry
 // beserta HTTP method (misal GET, POST) dan keamanannya untuk entitas Waktu (Time).
 func (t *TimeRoute) Run() {
 	// Membuat sub-grup rute. Nantinya alamat aslinya menjadi "/time/time".
-	group := t.route.Group("/time")
+	group := t.group.Group("/time")
 
 	// Menggunakan middleware pengaman autentikasi ke semua rute di dalam sub-grup ini.
 	// Artinya, semua request ke bawah baris ini WAJIB menyertakan token login (Bearer).

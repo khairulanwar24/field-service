@@ -27,10 +27,10 @@ type IFieldScheduleRoute interface {
 
 // NewFieldRoute adalah konstruktor (pembuat objek) dari FieldRoute.
 // Fungsi ini mengelompokkan semua rute terkait field ke dalam prefix "/field".
-func NewFieldScheduleRoute(router *gin.Engine, controller controllers.IControllerRegistry, client clients.IClientRegistry) IFieldScheduleRoute {
+func NewFieldScheduleRoute(controller controllers.IControllerRegistry, group *gin.RouterGroup, client clients.IClientRegistry) IFieldScheduleRoute {
 	return &FieldScheduleRoute{
 		controller: controller,
-		group:      router.Group("/field"), // Mengelompokkan rute URL berawalan "/field"
+		group:      group, // Mengelompokkan rute URL berawalan "/field"
 		client:     client,
 	}
 }
